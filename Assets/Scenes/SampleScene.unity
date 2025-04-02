@@ -457,9 +457,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   material: {fileID: 2100000, guid: 106fe088a043891468d7fe3daef900db, type: 2}
-  instanceCount: 5000
+  instanceCount: 1
   width: 1
   height: 1
+  depth: 1
 --- !u!4 &1548962866
 Transform:
   m_ObjectHideFlags: 0

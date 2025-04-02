@@ -3,14 +3,14 @@ Finals Exam for Applied Mathematics.
 Requirements:
 
 1. Add jump functionality
-  a. jump must be fast when going up and slow when going down
-  b. player speed reduced in half when in the air.
+  * jump must be fast when going up and slow when going down
+  * player speed reduced in half when in the air.
 3. Add Powerups
-  a. fireball that goes in a straight line
-  b. gives the player an extra life
-  c. gives the player invincibility and kills anything it collides with.
+  * fireball that goes in a straight line
+  * gives the player an extra life
+  * gives the player invincibility and kills anything it collides with.
 5. Add Enemies that will damage the player
-  a. Enemies can move left/right 
+  * Enemies can move left/right 
 6. obstacles for the player to move around in 
 7. The game has an end goal
 8. Some obstacles can instakill the player

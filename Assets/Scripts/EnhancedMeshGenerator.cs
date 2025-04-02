@@ -88,7 +88,7 @@ public class EnhancedMeshGenerator : MonoBehaviour
             }
             
             // Configure default camera settings
-            cameraFollow.offset = new Vector3(0, 7, -15);
+            cameraFollow.offset = new Vector3(0, 0, -15);
             cameraFollow.smoothSpeed = 0.1f;
         }
     }

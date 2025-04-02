@@ -9,6 +9,7 @@ Requirements:
   * fireball that goes in a straight line
   * gives the player an extra life
   * gives the player invincibility and kills anything it collides with.
+    
 5. Add Enemies that will damage the player
   * Enemies can move left/right 
 6. obstacles for the player to move around in 

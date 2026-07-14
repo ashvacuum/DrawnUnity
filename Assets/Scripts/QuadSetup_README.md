@@ -1,345 +1,186 @@
-# 3D Quad Setup Guide with Normals and Matrices
+# QuadSetupGuide
 
-A step-by-step tutorial for creating procedural 3D quads in Unity using custom mesh generation, normals, and transformation matrices.
+Procedural quad mesh + GPU-instanced drawing with `Matrix4x4` transforms. Teaching sample for mesh vertices, winding, normals, UVs, and `Graphics.DrawMeshInstanced`.
 
----
-
-## Table of Contents
-
-1. [Prerequisites](#prerequisites)
-2. [What You'll Learn](#what-youll-learn)
-3. [Step-by-Step Setup](#step-by-step-setup)
-4. [Understanding the Code](#understanding-the-code)
-5. [Experimentation Ideas](#experimentation-ideas)
-6. [Common Issues](#common-issues)
+| | |
+|---|---|
+| **Script** | `Assets/Scripts/QuadSetupGuide.cs` |
+| **Related** | `EnhancedMeshGenerator.cs` (cube + collision; same drawing pattern) |
+| **Engine** | Unity 6 / URP (this project) |
 
 ---
 
-## Prerequisites
+## Contents
 
-- Unity 2020.3 or later
-- Basic understanding of C# and Unity
-- Understanding of 3D coordinate systems (X, Y, Z axes)
-
----
-
-## What You'll Learn
-
-- How to create a mesh from scratch using vertices and triangles
-- How normals affect lighting and face direction
-- How to use Matrix4x4 for transformations (position, rotation, scale)
-- How to render multiple instances efficiently using GPU instancing
+1. [Quick start](#quick-start)
+2. [Inspector](#inspector)
+3. [Runtime API](#runtime-api)
+4. [What runs at Play](#what-runs-at-play)
+5. [Mesh layout](#mesh-layout)
+6. [Matrices and drawing](#matrices-and-drawing)
+7. [Limits and gotchas](#limits-and-gotchas)
+8. [Troubleshooting](#troubleshooting)
+9. [Experiments](#experiments)
+10. [Unity references](#unity-references)
 
 ---
 
-## Step-by-Step Setup
+## Quick start
 
-### Step 1: Create a New Scene
+1. Create an empty GameObject named `QuadGenerator` (transform at origin).
+2. Add component **Quad Setup Guide**.
+3. Create a Material (`URP/Lit` or `Unlit/Color`), set a color, check **Enable GPU Instancing**.
+4. Assign that material to the component’s **Material** field.
+5. Set the Main Camera to about `(0, 2, -5)`, rotation `(10, 0, 0)`.
+6. Press Play — you should see three quads (center, rotated right, scaled left).
 
-1. Open your Unity project
-2. Create a new scene or use an existing one
-3. Delete or disable the default cube (if present)
-
-### Step 2: Create an Empty GameObject
-
-1. In the Hierarchy, right-click and select `Create Empty`
-2. Rename it to `QuadGenerator`
-3. Reset its transform (position: 0,0,0, rotation: 0,0,0, scale: 1,1,1)
-
-### Step 3: Attach the Script
-
-1. Locate the `QuadSetupGuide.cs` script in `Assets/Scripts/`
-2. Drag and drop it onto the `QuadGenerator` GameObject
-   - OR select `QuadGenerator` and click `Add Component`, then search for "QuadSetupGuide"
-
-### Step 4: Create a Material
-
-1. In the Project window, right-click in `Assets/`
-2. Select `Create > Material`
-3. Name it `QuadMaterial`
-4. Choose a shader (Standard, URP/Lit, or your preferred shader)
-5. Set a color or texture to make the quads visible
-
-### Step 5: Assign the Material
-
-1. Select the `QuadGenerator` GameObject
-2. In the Inspector, find the `QuadSetupGuide` component
-3. Drag the `QuadMaterial` into the `Material` slot
-
-### Step 6: Adjust Settings (Optional)
-
-In the Inspector, you can modify:
-- **Width**: Width of the quad (default: 1)
-- **Height**: Height of the quad (default: 1)
-
-### Step 7: Run the Scene
-
-1. Press the Play button
-2. You should see three quads:
-   - One at the origin (center)
-   - One rotated 45° to the right
-   - One scaled and positioned to the left
-
-### Step 8: Adjust Camera Position
-
-1. Select the Main Camera
-2. Position it to see the quads clearly
-   - Suggested position: (0, 2, -5)
-   - Suggested rotation: (10, 0, 0)
+The script turns on `material.enableInstancing` at runtime if it is off, and logs a warning. Prefer enabling it on the asset.
 
 ---
 
-## Understanding the Code
+## Inspector
 
-### Part 1: Mesh Structure
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| Material | `Material` | — | Required. Must support GPU instancing. |
+| Width | `float` | `1` | Quad width in local space (X). |
+| Height | `float` | `1` | Quad height in local space (Y). |
 
-A mesh consists of three essential components:
+---
 
-#### Vertices (Corner Points)
+## Runtime API
 
 ```csharp
-Vector3[] vertices = new Vector3[4]
+// Append one instance (position / rotation / scale → Matrix4x4.TRS)
+void AddQuad(Vector3 position, Quaternion rotation, Vector3 scale);
+
+// Split a matrix back into TRS (useful for animation experiments)
+void DecomposeMatrix(Matrix4x4 matrix, out Vector3 position,
+                     out Quaternion rotation, out Vector3 scale);
+```
+
+Instance list is private. Mutate existing instances by keeping your own index and rebuilding with `AddQuad`, or edit `CreateQuadInstances()` in the script for demos.
+
+---
+
+## What runs at Play
+
+```
+Start
+  ├─ validate Material
+  ├─ enable GPU Instancing if needed
+  ├─ CreateQuadMesh()      → one Mesh (4 verts, 2 tris, UVs, +Z normals)
+  └─ CreateQuadInstances() → three Matrix4x4 entries
+
+Update (every frame)
+  └─ RenderQuads()
+       ├─ copy List → Matrix4x4[] (reuse buffer)
+       └─ Graphics.DrawMeshInstanced(mesh, 0, material, matrices, count)
+```
+
+No MeshFilter / MeshRenderer on the GameObject — drawing is procedural via `Graphics`.
+
+---
+
+## Mesh layout
+
+Quad sits in the **XY** plane, centered on the origin, **front face toward +Z** (toward a default camera looking +Z from negative Z).
+
+### Vertices
+
+| Index | Local position | Role |
+|-------|----------------|------|
+| 0 | `(-w/2, -h/2, 0)` | Bottom-left |
+| 1 | `( w/2, -h/2, 0)` | Bottom-right |
+| 2 | `(-w/2,  h/2, 0)` | Top-left |
+| 3 | `( w/2,  h/2, 0)` | Top-right |
+
+### Triangles (winding)
+
+```csharp
+0, 1, 2,   // BL → BR → TL
+1, 3, 2    // BR → TR → TL
+```
+
+Counter-clockwise when viewed from **+Z** → front face +Z. Matches `Vector3.forward` normals. Wrong winding + single-sided materials = **invisible** quads (back-face culling).
+
+### UVs and normals
+
+- UVs use the **same index order as vertices** (`BL, BR, TL, TR`): `(0,0)` → `(1,0)` → `(0,1)` → `(1,1)`.
+- Unity UV space: **U** left→right, **V** bottom→top (`V = 0` is the texture bottom).
+- Normals: all `Vector3.forward` `(0, 0, 1)` for flat lighting on the front face.
+- If a texture looks upside-down, flip **V** (e.g. swap `0`/`1` on V) — don’t reorder vertices to “fix” it.
+
+---
+
+## Matrices and drawing
+
+Each instance is one `Matrix4x4.TRS(position, rotation, scale)`:
+
+| Demo instance | Position | Rotation | Scale |
+|---------------|----------|----------|-------|
+| 1 | `(0, 0, 0)` | identity | `(1, 1, 1)` |
+| 2 | `(3, 0, 0)` | Y 45° | `(1, 1, 1)` |
+| 3 | `(-3, 0, 0)` | identity | `(2, 0.5, 1)` |
+
+`Graphics.DrawMeshInstanced` draws one mesh many times. Same mesh, different matrices, one (or few) draw calls.
+
+---
+
+## Limits and gotchas
+
+| Topic | Detail |
+|-------|--------|
+| Batch size | Max **1023** matrices per `DrawMeshInstanced` call. This guide uses one call and warns if you exceed that. |
+| GPU Instancing | Material must have it enabled or nothing draws. |
+| Winding vs camera | Front must face the camera (or use a double-sided shader). |
+| Allocations | Matrix buffer is reused; grow reallocates only when instance count changes. |
+| Mesh lifetime | Procedural mesh is `Destroy`ed in `OnDestroy`. |
+| Not a collider | Visual only — no physics. See `CollisionManager` / `EnhancedMeshGenerator` for that path. |
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Nothing visible | Missing material / Instancing off / winding / camera | Assign material, enable Instancing, keep winding `0,1,2` / `1,3,2`, camera `(0, 2, -5)` |
+| Black quads | Lit shader, no light, bad normals | Add Directional Light, or use Unlit; check normals face the light |
+| Looks flipped | Viewing back face or inverted winding | Match winding to normals, or flip with `Vector3.back` |
+| Console error about instancing | Material flag | Check **Enable GPU Instancing** |
+| Only first 1023 appear | API limit | Split into multiple `DrawMeshInstanced` calls |
+
+---
+
+## Experiments
+
+### Grid
+
+Replace `CreateQuadInstances()` body with nested loops placing `Matrix4x4.TRS` on a 5×5 grid (`x * 2`, `y * 2`).
+
+### Spin one instance
+
+In `Update`, before `RenderQuads()`:
+
+```csharp
+if (matrices.Count > 0)
 {
-    new Vector3(-width/2, -height/2, 0),  // Bottom-left  [0]
-    new Vector3( width/2, -height/2, 0),  // Bottom-right [1]
-    new Vector3(-width/2,  height/2, 0),  // Top-left     [2]
-    new Vector3( width/2,  height/2, 0)   // Top-right    [3]
-};
-```
-
-- Defines 4 corner points in 3D space
-- Centered at origin (0, 0, 0)
-- Facing forward along the Z-axis
-
-#### Triangles (Face Definition)
-
-```csharp
-int[] triangles = new int[6]
-{
-    0, 2, 1,  // First triangle
-    1, 2, 3   // Second triangle
-};
-```
-
-- Uses vertex indices to form triangles
-- Counter-clockwise winding = front face
-- 2 triangles form 1 quad
-
-#### Normals (Surface Direction)
-
-```csharp
-Vector3[] normals = new Vector3[4]
-{
-    Vector3.forward,  // (0, 0, 1)
-    Vector3.forward,
-    Vector3.forward,
-    Vector3.forward
-};
-```
-
-- Perpendicular vectors pointing away from surface
-- Essential for lighting calculations
-- All point forward for a flat quad facing +Z
-
-### Part 2: Matrix Transformations
-
-A Matrix4x4 combines three transformations:
-
-```csharp
-Matrix4x4 matrix = Matrix4x4.TRS(position, rotation, scale);
-```
-
-- **T** (Translation): Where to position the quad
-- **R** (Rotation): How to rotate the quad (Quaternion)
-- **S** (Scale): How to resize the quad
-
-#### Example: Position a Quad
-
-```csharp
-Vector3 position = new Vector3(5, 2, 0);      // 5 units right, 2 units up
-Quaternion rotation = Quaternion.identity;     // No rotation
-Vector3 scale = Vector3.one;                   // Original size
-Matrix4x4 matrix = Matrix4x4.TRS(position, rotation, scale);
-```
-
-#### Example: Rotate a Quad
-
-```csharp
-Vector3 position = new Vector3(0, 0, 0);
-Quaternion rotation = Quaternion.Euler(0, 90, 0);  // 90° around Y-axis
-Vector3 scale = Vector3.one;
-Matrix4x4 matrix = Matrix4x4.TRS(position, rotation, scale);
-```
-
-#### Example: Scale a Quad
-
-```csharp
-Vector3 position = new Vector3(0, 0, 0);
-Quaternion rotation = Quaternion.identity;
-Vector3 scale = new Vector3(2, 3, 1);  // 2x width, 3x height
-Matrix4x4 matrix = Matrix4x4.TRS(position, rotation, scale);
-```
-
-### Part 3: Instanced Rendering
-
-```csharp
-Graphics.DrawMeshInstanced(quadMesh, 0, material, matrixArray);
-```
-
-- Renders multiple copies of the same mesh efficiently
-- Each instance uses a different transformation matrix
-- GPU processes all instances in parallel
-- Much faster than creating individual GameObjects
-
----
-
-## Experimentation Ideas
-
-### Experiment 1: Create a Grid of Quads
-
-Modify `CreateQuadInstances()`:
-
-```csharp
-void CreateQuadInstances()
-{
-    for (int x = 0; x < 5; x++)
-    {
-        for (int y = 0; y < 5; y++)
-        {
-            Vector3 position = new Vector3(x * 2, y * 2, 0);
-            Quaternion rotation = Quaternion.identity;
-            Vector3 scale = Vector3.one;
-            Matrix4x4 matrix = Matrix4x4.TRS(position, rotation, scale);
-            matrices.Add(matrix);
-        }
-    }
+    DecomposeMatrix(matrices[0], out Vector3 pos, out Quaternion rot, out Vector3 scale);
+    rot *= Quaternion.Euler(0f, 0f, 50f * Time.deltaTime);
+    matrices[0] = Matrix4x4.TRS(pos, rot, scale);
 }
 ```
 
-### Experiment 2: Animate Rotation in Update()
+(`matrices` is private — edit inside the class for this experiment.)
 
-Add to the `Update()` method:
+### Wave
 
-```csharp
-void Update()
-{
-    // Rotate the first quad
-    if (matrices.Count > 0)
-    {
-        DecomposeMatrix(matrices[0], out Vector3 pos, out Quaternion rot, out Vector3 scale);
-        rot *= Quaternion.Euler(0, 0, 50 * Time.deltaTime);  // Rotate around Z-axis
-        matrices[0] = Matrix4x4.TRS(pos, rot, scale);
-    }
-
-    RenderQuads();
-}
-```
-
-### Experiment 3: Different Facing Directions
-
-Create quads facing different directions by changing normals and rotation:
-
-```csharp
-// Quad facing right (+X)
-Quaternion rotation = Quaternion.Euler(0, 90, 0);
-Vector3[] normals = new Vector3[4]
-{
-    Vector3.right, Vector3.right, Vector3.right, Vector3.right
-};
-```
-
-### Experiment 4: Wave Effect
-
-Create a wave pattern with quads:
-
-```csharp
-void CreateQuadInstances()
-{
-    for (int i = 0; i < 20; i++)
-    {
-        float x = i * 1.5f;
-        float y = Mathf.Sin(i * 0.5f) * 2;  // Sine wave
-        Vector3 position = new Vector3(x, y, 0);
-        Quaternion rotation = Quaternion.identity;
-        Vector3 scale = Vector3.one;
-        Matrix4x4 matrix = Matrix4x4.TRS(position, rotation, scale);
-        matrices.Add(matrix);
-    }
-}
-```
+Place ~20 instances along X with `y = Mathf.Sin(i * 0.5f) * 2f`.
 
 ---
 
-## Common Issues
+## Unity references
 
-### Issue 1: Quads Not Visible
-
-**Possible causes:**
-- Material not assigned
-- Camera positioned incorrectly
-- Quads rendered behind the camera
-
-**Solution:**
-- Check the material is assigned in Inspector
-- Position camera at (0, 0, -10) looking forward
-- Check quad positions are in front of camera
-
-### Issue 2: Quads Are Black
-
-**Possible causes:**
-- Normals pointing wrong direction
-- No light in the scene
-- Wrong shader on material
-
-**Solution:**
-- Add a Directional Light to the scene
-- Use `quadMesh.RecalculateNormals()` instead of manual normals
-- Try an Unlit shader to rule out lighting issues
-
-### Issue 3: Quads Appear Inverted
-
-**Possible causes:**
-- Triangle winding order is clockwise instead of counter-clockwise
-- Viewing from the back side
-
-**Solution:**
-- Reverse triangle indices: `{1, 2, 0, 3, 2, 1}`
-- Or flip normals: `Vector3.back` instead of `Vector3.forward`
-
-### Issue 4: Performance Issues with Many Quads
-
-**Solution:**
-- GPU instancing is already optimized for many instances
-- Ensure you're using one `DrawMeshInstanced` call, not multiple
-- Limit to 1023 instances per batch (script handles this)
-
----
-
-## Key Takeaways
-
-1. **Vertices** define the shape's corner points
-2. **Triangles** connect vertices to form surfaces
-3. **Normals** determine lighting and face direction
-4. **Matrices** combine position, rotation, and scale into one transformation
-5. **Instanced rendering** efficiently renders many copies of the same mesh
-
----
-
-## Next Steps
-
-- Try creating other shapes (hexagon, circle with many triangles)
-- Implement dynamic mesh modification
-- Add texture coordinates animation
-- Create a particle system using quad instances
-- Combine multiple mesh types in one scene
-
----
-
-## Reference
-
-Based on `EnhancedMeshGenerator.cs` lines 96-155 (cube mesh creation)
-
-For more information:
-- Unity Mesh API: https://docs.unity3d.com/ScriptReference/Mesh.html
-- Matrix4x4: https://docs.unity3d.com/ScriptReference/Matrix4x4.html
-- DrawMeshInstanced: https://docs.unity3d.com/ScriptReference/Graphics.DrawMeshInstanced.html
+- [Mesh](https://docs.unity3d.com/ScriptReference/Mesh.html)
+- [Matrix4x4](https://docs.unity3d.com/ScriptReference/Matrix4x4.html)
+- [Graphics.DrawMeshInstanced](https://docs.unity3d.com/ScriptReference/Graphics.DrawMeshInstanced.html)

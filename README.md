@@ -23,3 +23,9 @@ notes: no art required / no need to draw the enemies in the same instanced mesh 
 
 
 up to teams of two people.
+
+---
+
+## Docs
+
+- Quad mesh / instancing guide: [`Assets/Scripts/QuadSetup_README.md`](Assets/Scripts/QuadSetup_README.md) (`QuadSetupGuide.cs`)

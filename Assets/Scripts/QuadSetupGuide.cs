@@ -1,139 +1,160 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-/// GUIDE: Setting Up a 3D Quad with Normals and Matrices
-/// This guide demonstrates how to procedurally create a quad mesh in Unity
-/// with proper normals and matrix transformations for rendering.
-
+/// <summary>
+/// Teaching sample: build a procedural quad mesh and draw instances with
+/// <see cref="Graphics.DrawMeshInstanced"/> and <see cref="Matrix4x4.TRS"/>.
+/// See <c>Assets/Scripts/QuadSetup_README.md</c> for full documentation.
+/// </summary>
 public class QuadSetupGuide : MonoBehaviour
 {
-    // STEP 1: Required Components
-    public Material material;  // Assign a material in the Inspector
+    #region Fields
+
+    private const int MAX_INSTANCES_PER_BATCH = 1023;
+
+    [SerializeField]
+    [Tooltip("Material used for all instances. Enable GPU Instancing on the asset.")]
+    private Material material;
+
+    [SerializeField]
+    [Tooltip("Quad width in local space (X).")]
+    private float width = 1f;
+
+    [SerializeField]
+    [Tooltip("Quad height in local space (Y).")]
+    private float height = 1f;
 
     private Mesh quadMesh;
     private List<Matrix4x4> matrices = new List<Matrix4x4>();
+    private Matrix4x4[] matrixArray;
 
-    // Quad dimensions
-    public float width = 1f;
-    public float height = 1f;
+    #endregion
+
+    #region Lifecycle
 
     void Start()
     {
-        // STEP 2: Create the quad mesh
-        CreateQuadMesh();
+        if (material == null)
+        {
+            Debug.LogError("QuadSetupGuide: Assign a Material in the Inspector.");
+            enabled = false;
+            return;
+        }
 
-        // STEP 3: Create transformation matrices for instances
+        // DrawMeshInstanced requires GPU Instancing enabled on the material.
+        if (!material.enableInstancing)
+        {
+            material.enableInstancing = true;
+            Debug.LogWarning("QuadSetupGuide: Enabled GPU Instancing on the material.");
+        }
+
+        CreateQuadMesh();
         CreateQuadInstances();
     }
 
-    // STEP 2 IMPLEMENTATION: Create a Quad Mesh
+    void Update()
+    {
+        RenderQuads();
+    }
+
+    void OnDestroy()
+    {
+        if (quadMesh != null)
+        {
+            Destroy(quadMesh);
+            quadMesh = null;
+        }
+    }
+
+    #endregion
+
+    #region Mesh
+
+    /// <summary>
+    /// Builds a unit-centered XY quad facing +Z (winding and normals aligned).
+    /// </summary>
     void CreateQuadMesh()
     {
         quadMesh = new Mesh();
         quadMesh.name = "ProceduralQuad";
 
-        // Define 4 vertices for the quad (in local space)
-        // Quad is centered at origin, facing forward (+Z direction)
+        // Quad centered at origin, front face toward +Z (matches default camera looking +Z).
         Vector3[] vertices = new Vector3[4]
         {
-            new Vector3(-width/2, -height/2, 0),  // Bottom-left  [0]
-            new Vector3( width/2, -height/2, 0),  // Bottom-right [1]
-            new Vector3(-width/2,  height/2, 0),  // Top-left     [2]
-            new Vector3( width/2,  height/2, 0)   // Top-right    [3]
+            new Vector3(-width * 0.5f, -height * 0.5f, 0f), // Bottom-left  [0]
+            new Vector3(width * 0.5f, -height * 0.5f, 0f),  // Bottom-right [1]
+            new Vector3(-width * 0.5f, height * 0.5f, 0f),  // Top-left     [2]
+            new Vector3(width * 0.5f, height * 0.5f, 0f)    // Top-right    [3]
         };
 
-        // Define 2 triangles (6 indices) to form the quad
-        // Triangle winding order matters for face direction!
-        // Counter-clockwise winding = front face
+        // Counter-clockwise when viewed from +Z → front face +Z (matches normals).
         int[] triangles = new int[6]
         {
-            0, 2, 1,  // First triangle: bottom-left, top-left, bottom-right
-            1, 2, 3   // Second triangle: bottom-right, top-left, top-right
+            0, 1, 2, // Bottom-left, bottom-right, top-left
+            1, 3, 2  // Bottom-right, top-right, top-left
         };
 
-        // Define UV coordinates for texture mapping
+        // Same index order as vertices (BL, BR, TL, TR) — not a clockwise ring.
+        // Unity: U 0→1 left→right, V 0→1 bottom→top.
         Vector2[] uvs = new Vector2[4]
         {
-            new Vector2(0, 0),  // Bottom-left
-            new Vector2(1, 0),  // Bottom-right
-            new Vector2(0, 1),  // Top-left
-            new Vector2(1, 1)   // Top-right
+            new Vector2(0f, 0f), // [0] bottom-left
+            new Vector2(1f, 0f), // [1] bottom-right
+            new Vector2(0f, 1f), // [2] top-left
+            new Vector2(1f, 1f)  // [3] top-right
         };
 
-        // IMPORTANT: Manually define normals for proper lighting
-        // All normals point forward (+Z) for a front-facing quad
         Vector3[] normals = new Vector3[4]
         {
-            Vector3.forward,  // Normal for vertex 0
-            Vector3.forward,  // Normal for vertex 1
-            Vector3.forward,  // Normal for vertex 2
-            Vector3.forward   // Normal for vertex 3
+            Vector3.forward,
+            Vector3.forward,
+            Vector3.forward,
+            Vector3.forward
         };
 
-        // Assign mesh data
         quadMesh.vertices = vertices;
         quadMesh.triangles = triangles;
         quadMesh.uv = uvs;
-        quadMesh.normals = normals;  // Explicitly set normals
-
-        // Alternative: Let Unity calculate normals automatically
-        // quadMesh.RecalculateNormals();
-
-        // Recalculate bounds for proper culling
+        quadMesh.normals = normals;
         quadMesh.RecalculateBounds();
     }
 
-    // STEP 3 IMPLEMENTATION: Create Transformation Matrices
+    #endregion
+
+    #region Instances
+
+    /// <summary>
+    /// Seeds three demo instances: origin, Y-rotated, and non-uniform scale.
+    /// </summary>
     void CreateQuadInstances()
     {
-        // Example 1: Create a quad at origin with no rotation
-        Vector3 position1 = new Vector3(0, 0, 0);
-        Quaternion rotation1 = Quaternion.identity;
-        Vector3 scale1 = Vector3.one;
-        Matrix4x4 matrix1 = Matrix4x4.TRS(position1, rotation1, scale1);
-        matrices.Add(matrix1);
+        // Origin, no rotation
+        matrices.Add(Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one));
 
-        // Example 2: Create a quad rotated 45 degrees on Y-axis
-        Vector3 position2 = new Vector3(3, 0, 0);
-        Quaternion rotation2 = Quaternion.Euler(0, 45, 0);
-        Vector3 scale2 = Vector3.one;
-        Matrix4x4 matrix2 = Matrix4x4.TRS(position2, rotation2, scale2);
-        matrices.Add(matrix2);
+        // Rotated 45° on Y, offset right
+        matrices.Add(Matrix4x4.TRS(
+            new Vector3(3f, 0f, 0f),
+            Quaternion.Euler(0f, 45f, 0f),
+            Vector3.one));
 
-        // Example 3: Create a scaled and positioned quad
-        Vector3 position3 = new Vector3(-3, 0, 0);
-        Quaternion rotation3 = Quaternion.identity;
-        Vector3 scale3 = new Vector3(2, 0.5f, 1);  // Width=2, Height=0.5
-        Matrix4x4 matrix3 = Matrix4x4.TRS(position3, rotation3, scale3);
-        matrices.Add(matrix3);
+        // Scaled, offset left
+        matrices.Add(Matrix4x4.TRS(
+            new Vector3(-3f, 0f, 0f),
+            Quaternion.identity,
+            new Vector3(2f, 0.5f, 1f)));
     }
 
-    void Update()
-    {
-        // STEP 4: Render all quad instances
-        RenderQuads();
-    }
-
-    // STEP 4 IMPLEMENTATION: Render Using Instancing
-    void RenderQuads()
-    {
-        if (quadMesh == null || material == null) return;
-
-        // Convert list to array for GPU instancing
-        Matrix4x4[] matrixArray = matrices.ToArray();
-
-        // Draw all instances in one batch (max 1023 per batch)
-        Graphics.DrawMeshInstanced(quadMesh, 0, material, matrixArray);
-    }
-
-    // UTILITY: Add a new quad at runtime
+    /// <summary>
+    /// Appends a new instance transform.
+    /// </summary>
     public void AddQuad(Vector3 position, Quaternion rotation, Vector3 scale)
     {
-        Matrix4x4 matrix = Matrix4x4.TRS(position, rotation, scale);
-        matrices.Add(matrix);
+        matrices.Add(Matrix4x4.TRS(position, rotation, scale));
     }
 
-    // UTILITY: Decompose a matrix back to position/rotation/scale
+    /// <summary>
+    /// Extracts position, rotation, and lossy scale from a TRS matrix.
+    /// </summary>
     public void DecomposeMatrix(Matrix4x4 matrix, out Vector3 position,
                                 out Quaternion rotation, out Vector3 scale)
     {
@@ -141,59 +162,44 @@ public class QuadSetupGuide : MonoBehaviour
         rotation = matrix.rotation;
         scale = matrix.lossyScale;
     }
+
+    #endregion
+
+    #region Rendering
+
+    void RenderQuads()
+    {
+        if (quadMesh == null || material == null || matrices.Count == 0)
+        {
+            return;
+        }
+
+        RefreshMatrixArray();
+
+        // ponytail: one DrawMeshInstanced call; ceil = 1023. Split into batches if you go past that.
+        int count = Mathf.Min(matrixArray.Length, MAX_INSTANCES_PER_BATCH);
+
+        if (matrixArray.Length > MAX_INSTANCES_PER_BATCH)
+        {
+            Debug.LogWarning("QuadSetupGuide: DrawMeshInstanced max is 1023; extra instances skipped.");
+        }
+
+        Graphics.DrawMeshInstanced(quadMesh, 0, material, matrixArray, count);
+    }
+
+    void RefreshMatrixArray()
+    {
+        // Reuse the array; copy so in-place matrix edits (e.g. animation experiments) still render.
+        if (matrixArray == null || matrixArray.Length != matrices.Count)
+        {
+            matrixArray = new Matrix4x4[matrices.Count];
+        }
+
+        for (int i = 0; i < matrices.Count; i++)
+        {
+            matrixArray[i] = matrices[i];
+        }
+    }
+
+    #endregion
 }
-
-/* ============================================================================
-   KEY CONCEPTS EXPLAINED:
-   ============================================================================
-
-   1. VERTICES:
-   - Define the corner points of your quad in 3D space
-   - Use local coordinates (relative to origin)
-   - Order matters for triangle winding
-
-   2. TRIANGLES:
-   - Define which vertices form triangles (using indices)
-   - Counter-clockwise winding = front face
-   - A quad needs 2 triangles (6 indices total)
-
-   3. NORMALS:
-   - Perpendicular vectors from the surface
-   - Critical for proper lighting calculations
-   - Can be set manually or calculated with RecalculateNormals()
-   - For a flat quad facing +Z, all normals should be (0, 0, 1)
-
-   4. UV COORDINATES:
-   - Map 2D texture space (0-1) to 3D vertices
-   - (0,0) = bottom-left of texture
-   - (1,1) = top-right of texture
-
-   5. MATRIX4x4 (TRS):
-   - T = Translation (position in world space)
-   - R = Rotation (orientation as Quaternion)
-   - S = Scale (size multiplier)
-   - Combines all transformations into one matrix
-   - Used by GPU for efficient instanced rendering
-
-   6. INSTANCED RENDERING:
-   - Graphics.DrawMeshInstanced() renders multiple copies efficiently
-   - Each instance uses the same mesh but different matrix
-   - GPU processes all instances in parallel
-   - Maximum 1023 instances per batch
-
-   ============================================================================
-   USAGE IN CLASS:
-   ============================================================================
-
-   1. Attach this script to an empty GameObject
-   2. Create a material and assign it in the Inspector
-   3. Press Play to see three quads rendered
-   4. Modify CreateQuadInstances() to add more quads
-
-   TO CREATE DIFFERENT SHAPES:
-   - Increase vertex count (4 for quad, 8 for cube, etc.)
-   - Update triangle indices accordingly
-   - Recalculate or manually set normals for each face
-
-   ============================================================================
-*/

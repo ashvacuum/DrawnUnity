@@ -1,6 +1,11 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// An axis-aligned bounding box (AABB): a non-rotated box described by a
+/// center and size. Used here instead of Unity's BoxCollider/Rigidbody so
+/// the collision math stays visible in one small class.
+/// </summary>
 public class AABBBounds
 {
     public Vector3 Center { get; private set; }
@@ -28,6 +33,11 @@ public class AABBBounds
         Max = center + Extents;
     }
 
+    /// <summary>
+    /// True if this box and <paramref name="other"/> overlap on all three axes.
+    /// Two AABBs overlap unless one is entirely to one side of the other on
+    /// at least one axis — that's what each clause below checks (negated).
+    /// </summary>
     public bool Intersects(AABBBounds other)
     {
         return !(Max.x < other.Min.x || Min.x > other.Max.x ||
@@ -36,9 +46,20 @@ public class AABBBounds
     }
 }
 
+/// <summary>
+/// Central registry of every AABB in the scene, keyed by an int handle.
+/// A lightweight stand-in for Unity's physics system: objects register a
+/// box here instead of adding a BoxCollider, and ask
+/// <see cref="CheckCollision"/> "would I overlap anything at this
+/// position?" before actually moving. See
+/// <c>Assets/Scripts/GameplaySystems_README.md</c> for how this fits together
+/// with <c>EnhancedMeshGenerator</c>.
+/// </summary>
 public class CollisionManager : MonoBehaviour
 {
     private static CollisionManager _instance;
+
+    /// <summary>Lazily creates a persistent CollisionManager the first time it's used.</summary>
     public static CollisionManager Instance
     {
         get
@@ -53,9 +74,10 @@ public class CollisionManager : MonoBehaviour
         }
     }
 
-    private Dictionary<int, AABBBounds> _colliders = new Dictionary<int, AABBBounds>();
+    private readonly Dictionary<int, AABBBounds> _colliders = new Dictionary<int, AABBBounds>();
     private int nextID = 0;
 
+    /// <summary>Adds a new box and returns the handle used for every other call below.</summary>
     public int RegisterCollider(Vector3 center, Vector3 size, bool isPlayer = false)
     {
         int id = nextID++;
@@ -73,10 +95,7 @@ public class CollisionManager : MonoBehaviour
 
     public void RemoveCollider(int id)
     {
-        if (_colliders.ContainsKey(id))
-        {
-            _colliders.Remove(id);
-        }
+        _colliders.Remove(id);
     }
 
     public void UpdateMatrix(int id, Matrix4x4 matrix)
@@ -87,16 +106,20 @@ public class CollisionManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// "If box <paramref name="id"/> moved to <paramref name="newCenter"/>, would it hit anything?"
+    /// Checks against every other registered box (O(n) — fine for a
+    /// classroom-sized scene, not meant to scale to thousands of colliders).
+    /// </summary>
     public bool CheckCollision(int id, Vector3 newCenter, out List<int> collidingIds)
     {
         collidingIds = new List<int>();
         if (!_colliders.TryGetValue(id, out AABBBounds current))
             return false;
 
-        // Create a temporary bounds for collision check
+        // Temporary bounds at the proposed position; never registered.
         AABBBounds temp = new AABBBounds(newCenter, current.Size, -1);
 
-        bool collided = false;
         foreach (var kvp in _colliders)
         {
             if (kvp.Key == id) continue; // Skip self-collision
@@ -104,10 +127,9 @@ public class CollisionManager : MonoBehaviour
             if (temp.Intersects(kvp.Value))
             {
                 collidingIds.Add(kvp.Key);
-                collided = true;
             }
         }
-        return collided;
+        return collidingIds.Count > 0;
     }
 
     public Matrix4x4 GetMatrix(int id)

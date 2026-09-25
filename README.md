@@ -41,14 +41,18 @@ Assets/
 
 ## Systems
 
-| Script | What it does | Docs |
-|---|---|---|
-| `QuadSetupGuide.cs` | Procedural quad mesh + GPU instancing. Minimal example of the drawing pattern used everywhere else. | [`QuadSetup_README.md`](Assets/Scripts/QuadSetup_README.md) |
-| `EnhancedMeshGenerator.cs` | Procedural cube mesh, instanced rendering, and the player movement loop. Start here to add jump/powerups/enemies. | [`GameplaySystems_README.md`](Assets/Scripts/GameplaySystems_README.md) |
-| `CollisionManager.cs` | Singleton registry of AABB (axis-aligned bounding box) colliders; answers "would I overlap anything at this position?" | [`GameplaySystems_README.md`](Assets/Scripts/GameplaySystems_README.md) |
-| `PlayerCameraFollow.cs` | Smoothed camera follow with optional axis locking and bounds clamping. | [`GameplaySystems_README.md`](Assets/Scripts/GameplaySystems_README.md) |
+| Script | Job |
+|---|---|
+| `QuadSetupGuide.cs` | Smallest example of the mesh + GPU instancing pattern. Start here. |
+| `EnhancedMeshGenerator.cs` | Wires the gameplay systems together. Attach this to a GameObject. |
+| `CubeMeshBuilder.cs` | Builds the cube mesh. |
+| `InstancedBoxRenderer.cs` | Draws every box in one batch (or several, past the 1023 limit). |
+| `BoxWorld.cs` | Creates and stores the player, ground, and random boxes. |
+| `PlayerController.cs` | Input, gravity, and movement. Add jump here. |
+| `CollisionManager.cs` | "Would this box overlap anything at this position?" |
+| `PlayerCameraFollow.cs` | Smoothly follows the player. |
 
-Read `QuadSetup_README.md` first — it's the smallest example of the instancing pattern. `GameplaySystems_README.md` builds on the same pattern and adds movement/collision, and includes a table mapping each assignment requirement above to where in the code it likely belongs.
+Docs: [`QuadSetup_README.md`](Assets/Scripts/QuadSetup_README.md) for the instancing basics, [`GameplaySystems_README.md`](Assets/Scripts/GameplaySystems_README.md) for how the gameplay scripts fit together and where each assignment requirement above likely belongs.
 
 ## Getting started
 
